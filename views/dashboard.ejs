@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard - Voice AI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .logout-btn {
+            background-color: #f44336;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .logout-btn:hover {
+            background-color: #d32f2f;
+        }
+        .card {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="tel"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .error {
+            color: red;
+            margin-bottom: 10px;
+        }
+        .success {
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+        .status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .verification-section {
+            margin-top: 20px;
+            display: none;
+        }
+        .dashboard-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .dashboard-section {
+            background: #fff;
+            padding: 2rem;
+            margin: 2rem 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-info {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 4px;
+        }
+        .verified {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .unverified {
+            color: #dc3545;
+        }
+        .verification-form {
+            margin-top: 1rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+
+    <div class="dashboard-container">
+        <h1>Welcome<% if (name) { %> <%= name %><% } %>!</h1>
+
+        <% if (success) { %>
+            <div class="success"><%= success %></div>
+        <% } %>
+        <% if (error) { %>
+            <div class="error"><%= error %></div>
+        <% } %>
+
+        <div class="dashboard-section">
+            <h2>Account Status</h2>
+            <div class="status-info">
+                <p><strong>Email:</strong> <%= email %></p>
+                <p><strong>Phone Status:</strong> 
+                    <% if (verified) { %>
+                        <span class="verified">✓ Verified (<%= phone %>)</span>
+                    <% } else if (phone) { %>
+                        <span class="unverified">Pending Verification (<%= phone %>)</span>
+                    <% } else { %>
+                        <span class="unverified">Not Registered</span>
+                    <% } %>
+                </p>
+                <% if (name) { %>
+                    <p><strong>Name:</strong> <%= name %></p>
+                <% } %>
+            </div>
+        </div>
+
+        <% if (!verified) { %>
+            <% if (!phone) { %>
+                <div class="dashboard-section">
+                    <h2>Phone Verification</h2>
+                    <p>Please verify your phone number to access all features.</p>
+                    
+                    <form action="/register-phone" method="POST" class="verification-form">
+                        <div class="form-group">
+                            <label for="name">Your Name:</label>
+                            <input type="text" id="name" name="name" required placeholder="Enter your preferred name">
+                        </div>
+                        <div class="form-group">
+                            <label for="phone">Phone Number:</label>
+                            <input type="tel" id="phone" name="phone" required placeholder="+1234567890">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Send Verification Code</button>
+                    </form>
+                </div>
+            <% } else { %>
+                <div class="dashboard-section">
+                    <h2>Enter Verification Code</h2>
+                    <p>A verification code has been sent to your phone number.</p>
+                    
+                    <form action="/verify-phone" method="POST" class="verification-form">
+                        <div class="form-group">
+                            <label for="code">Verification Code:</label>
+                            <input type="text" id="code" name="code" required placeholder="Enter code">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Verify Code</button>
+                    </form>
+                </div>
+            <% } %>
+        <% } else { %>
+            <div class="dashboard-section">
+                <h2>Voice AI Status</h2>
+                <p>✓ Your phone number is verified and ready to use with Voice AI.</p>
+                <p>You can now make calls from your registered number: <%= phone %></p>
+            </div>
+        <% } %>
+
+    </div>
+</body>
+</html>
