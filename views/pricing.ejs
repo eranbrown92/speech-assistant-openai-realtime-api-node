@@ -1,0 +1,153 @@
+<div class="container mt-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold text-primary mb-3">Simple, Transparent Pricing</h1>
+        <p class="lead text-secondary">Choose the plan that works best for you</p>
+    </div>
+    
+    <div class="pricing-table row justify-content-center g-4">
+        <!-- 1 Hour Plan -->
+        <div class="col-md-4">
+            <div class="card h-100 pricing-card border-0 shadow-sm">
+                <div class="card-body p-4 d-flex flex-column">
+                    <h2 class="card-title text-center mb-4 fw-bold">1 Hour</h2>
+                    <div class="text-center mb-4">
+                        <p class="display-5 fw-bold text-primary mb-0">$90</p>
+                        <p class="text-muted">per package</p>
+                    </div>
+                    <ul class="list-unstyled mb-4">
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            Best for quick sessions
+                        </li>
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            No discounts
+                        </li>
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            Full AI interaction
+                        </li>
+                    </ul>
+                    <div class="mt-auto">
+                        <button class="btn btn-outline-primary w-100 py-3 fw-bold buy-now" data-price-id="price_1_hour_id">Buy Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3 Hour Plan -->
+        <div class="col-md-4">
+            <div class="card h-100 pricing-card border-primary shadow">
+                <div class="card-body p-4 d-flex flex-column">
+                    <div class="text-center position-relative mb-4">
+                        <span class="position-absolute top-0 start-50 translate-middle badge rounded-pill bg-primary px-3 py-2">
+                            Most Popular
+                        </span>
+                        <h2 class="card-title fw-bold mt-3">3 Hours</h2>
+                    </div>
+                    <div class="text-center mb-4">
+                        <p class="display-5 fw-bold text-primary mb-0">$240</p>
+                        <p class="text-muted">per package</p>
+                    </div>
+                    <ul class="list-unstyled mb-4">
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            10% Discount Applied
+                        </li>
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            Great for deeper conversations
+                        </li>
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            Save $30 vs hourly rate
+                        </li>
+                    </ul>
+                    <div class="mt-auto">
+                        <button class="btn btn-primary w-100 py-3 fw-bold buy-now" data-price-id="price_3_hours_id">Buy Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5 Hour Plan -->
+        <div class="col-md-4">
+            <div class="card h-100 pricing-card border-0 shadow-sm">
+                <div class="card-body p-4 d-flex flex-column">
+                    <h2 class="card-title text-center mb-4 fw-bold">5 Hours</h2>
+                    <div class="text-center mb-4">
+                        <p class="display-5 fw-bold text-primary mb-0">$360</p>
+                        <p class="text-muted">per package</p>
+                    </div>
+                    <ul class="list-unstyled mb-4">
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            20% Discount Applied
+                        </li>
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            Best value for heavy users
+                        </li>
+                        <li class="mb-3 d-flex align-items-center">
+                            <i class="bi bi-check2-circle text-primary me-2"></i>
+                            Save $90 vs hourly rate
+                        </li>
+                    </ul>
+                    <div class="mt-auto">
+                        <button class="btn btn-outline-primary w-100 py-3 fw-bold buy-now" data-price-id="price_5_hours_id">Buy Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Stripe script -->
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+    const stripe = Stripe('<%= stripePublishableKey %>');
+    const redirectUrl = '<%= redirectUrl %>';
+
+    document.querySelectorAll('.buy-now').forEach(button => {
+        button.addEventListener('click', async (e) => {
+            if (redirectUrl) {
+                window.location.href = redirectUrl;
+                return;
+            }
+
+            const priceId = e.target.dataset.priceId;
+            
+            try {
+                const response = await fetch('/create-checkout-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        priceId: priceId
+                    })
+                });
+                
+                const session = await response.json();
+                
+                if (session.error) {
+                    console.error('Error:', session.error);
+                    alert('Failed to create checkout session. Please try again.');
+                    return;
+                }
+                
+                const result = await stripe.redirectToCheckout({
+                    sessionId: session.sessionId
+                });
+                
+                if (result.error) {
+                    console.error('Error:', result.error);
+                    alert('Failed to redirect to checkout. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            }
+        });
+    });
+</script>
