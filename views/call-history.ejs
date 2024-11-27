@@ -1,0 +1,83 @@
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0">Call History</h1>
+            <a href="/dashboard" class="btn btn-outline-primary">Back to Dashboard</a>
+        </div>
+        
+        <% if (error) { %>
+            <div class="alert alert-danger" role="alert">
+                <%= error %>
+            </div>
+        <% } %>
+        
+        <div class="card">
+            <div class="card-body p-0">
+                <% if (calls && calls.length > 0) { %>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Start Time</th>
+                                    <th>Duration</th>
+                                    <th class="text-end">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% calls.forEach(function(call) { %>
+                                    <tr>
+                                        <td>
+                                            <%= new Date(call.startTime).toLocaleDateString(undefined, {
+                                                weekday: 'short',
+                                                year: 'numeric',
+                                                month: 'short',
+                                                day: 'numeric'
+                                            }) %>
+                                        </td>
+                                        <td>
+                                            <%= new Date(call.startTime).toLocaleTimeString(undefined, {
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            }) %>
+                                        </td>
+                                        <td>
+                                            <% if (call.endTime) { %>
+                                                <% 
+                                                    const duration = new Date(call.endTime) - new Date(call.startTime);
+                                                    const minutes = Math.floor(duration / 60000);
+                                                    const seconds = ((duration % 60000) / 1000).toFixed(0);
+                                                    if (minutes > 0) {
+                                                %>
+                                                    <%= minutes %>m <%= seconds %>s
+                                                <% } else { %>
+                                                    <%= seconds %>s
+                                                <% } %>
+                                            <% } else { %>
+                                                -
+                                            <% } %>
+                                        </td>
+                                        <td class="text-end">
+                                            <% if (call.status === 'completed') { %>
+                                                <span class="badge bg-success">Completed</span>
+                                            <% } else if (call.status === 'in-progress') { %>
+                                                <span class="badge bg-primary">In Progress</span>
+                                            <% } else { %>
+                                                <span class="badge bg-danger">Failed</span>
+                                            <% } %>
+                                        </td>
+                                    </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                <% } else { %>
+                    <div class="text-center py-5">
+                        <p class="text-muted mb-0">No calls found in your history</p>
+                        <a href="/dashboard" class="btn btn-primary mt-3">Make Your First Call</a>
+                    </div>
+                <% } %>
+            </div>
+        </div>
+    </div>
+</div>

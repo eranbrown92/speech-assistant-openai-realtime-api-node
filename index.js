@@ -2,10 +2,10 @@
 import dotenv from 'dotenv';
 import Fastify from 'fastify';
 import fastifyCookie from '@fastify/cookie';
-import fastifyWs from '@fastify/websocket';
-import fastifyView from '@fastify/view';
-import fastifyFormbody from '@fastify/formbody';
 import fastifySession from '@fastify/session';
+import fastifyWs from '@fastify/websocket';
+import fastifyFormbody from '@fastify/formbody';
+import fastifyView from '@fastify/view';
 import fastifySecureSession from '@fastify/secure-session';
 import { MongoClient } from 'mongodb';
 import twilio from 'twilio';
@@ -13,9 +13,8 @@ import ejs from 'ejs';
 import bcrypt from 'bcrypt';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { WebSocket } from 'ws';
-import { OpenAI } from 'openai';
 import crypto from 'crypto';
+import WebSocket from 'ws';
 
 // Get current directory for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -26,22 +25,17 @@ dotenv.config();
 
 // Retrieve environment variables
 const { 
-    OPENAI_API_KEY, 
     MONGODB_URI, 
     TWILIO_ACCOUNT_SID, 
     TWILIO_AUTH_TOKEN, 
-    TWILIO_VERIFY_SERVICE_SID
+    TWILIO_VERIFY_SERVICE_SID,
+    OPENAI_API_KEY,
 } = process.env;
 
-if (!OPENAI_API_KEY || !MONGODB_URI || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SERVICE_SID) {
+if (!MONGODB_URI || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SERVICE_SID || !OPENAI_API_KEY) {
     console.error('Missing required environment variables. Please check your .env file.');
     process.exit(1);
 }
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-    apiKey: OPENAI_API_KEY
-});
 
 // Initialize Twilio client
 const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
@@ -59,33 +53,23 @@ const connectDB = async () => {
     }
 };
 
-// Initialize Fastify with logger
+// Create Fastify instance
 const fastify = Fastify({
     logger: true
 });
 
-// Generate a secure key for sessions
-const sessionKey = crypto.randomBytes(32);
-
 // Register plugins
 await fastify.register(fastifyCookie);
-await fastify.register(fastifyWs);
-await fastify.register(fastifyFormbody);
-
-// Register session support
 await fastify.register(fastifySession, {
-    secret: sessionKey.toString('hex'),
+    secret: crypto.randomBytes(32).toString('hex'),
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        path: '/'
-    },
-    saveUninitialized: false,
-    rolling: true,
-    expires: 1800000 // 30 minutes
+        secure: process.env.NODE_ENV === 'production'
+    }
 });
+await fastify.register(fastifyFormbody);
+await fastify.register(fastifyWs);
 
-// Register EJS as the template engine
+// Register view engine
 await fastify.register(fastifyView, {
     engine: {
         ejs: ejs
@@ -95,9 +79,111 @@ await fastify.register(fastifyView, {
     propertyName: 'view'
 });
 
-// Authentication decorator
+// Register routes
+fastify.register(async function (fastify) {
+    fastify.get('/settings', {
+        preHandler: fastify.authenticate
+    }, async (request, reply) => {
+        try {
+            const user = await db.collection('users').findOne({ email: request.session.user.email });
+            return reply.view('settings.ejs', { 
+                title: 'Settings',
+                user,
+                messages: {
+                    success: null,
+                    error: null
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching user settings:', error);
+            return reply.redirect('/dashboard');
+        }
+    });
+
+    fastify.post('/settings', {
+        preHandler: fastify.authenticate
+    }, async (request, reply) => {
+        try {
+            const { name, currentPassword, newPassword, confirmPassword } = request.body;
+            const user = await db.collection('users').findOne({ email: request.session.user.email });
+
+            // Update name
+            const updates = { name };
+
+            // Handle password change if requested
+            if (newPassword) {
+                // Verify current password
+                const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+                if (!isValidPassword) {
+                    return reply.view('settings.ejs', { 
+                        title: 'Settings',
+                        user,
+                        messages: {
+                            success: null,
+                            error: 'Current password is incorrect'
+                        }
+                    });
+                }
+
+                // Verify password confirmation
+                if (newPassword !== confirmPassword) {
+                    return reply.view('settings.ejs', { 
+                        title: 'Settings',
+                        user,
+                        messages: {
+                            success: null,
+                            error: 'New passwords do not match'
+                        }
+                    });
+                }
+
+                // Hash new password
+                updates.password = await bcrypt.hash(newPassword, 10);
+            }
+
+            // Update user
+            await db.collection('users').updateOne(
+                { email: request.session.user.email },
+                { $set: updates }
+            );
+
+            return reply.view('settings.ejs', { 
+                title: 'Settings',
+                user,
+                messages: {
+                    success: 'Settings updated successfully',
+                    error: null
+                }
+            });
+
+        } catch (error) {
+            console.error('Error updating settings:', error);
+            return reply.view('settings.ejs', { 
+                title: 'Settings',
+                user,
+                messages: {
+                    success: null,
+                    error: 'Failed to update settings'
+                }
+            });
+        }
+    });
+});
+
+// Register static files
+fastify.register(import('@fastify/static'), {
+    root: path.join(__dirname, 'public'),
+    prefix: '/public/'
+});
+
+// Authentication middleware
 fastify.decorate('authenticate', async (request, reply) => {
-    if (!request.session.user) {
+    try {
+        if (!request.session || !request.session.user) {
+            return reply.redirect('/login');
+        }
+    } catch (err) {
+        request.log.error('Authentication error:', err);
         return reply.redirect('/login');
     }
 });
@@ -105,7 +191,7 @@ fastify.decorate('authenticate', async (request, reply) => {
 // Middleware to check user state for all routes
 fastify.addHook('preHandler', async (request, reply) => {
     try {
-        if (request.session.user) {
+        if (request.session && request.session.user) {
             const user = await db.collection('users').findOne({ email: request.session.user.email }) ||
                         await db.collection('pending_users').findOne({ email: request.session.user.email });
             request.user = user;
@@ -124,7 +210,7 @@ const LOG_EVENT_TYPES = ['error', 'warning'];
 
 // Authentication Routes
 fastify.get('/login', async (request, reply) => {
-    if (request.session.user) {
+    if (request.session && request.session.user) {
         return reply.redirect('/dashboard');
     }
     return reply.view('login.ejs', { 
@@ -136,10 +222,12 @@ fastify.get('/login', async (request, reply) => {
 
 fastify.post('/login', async (request, reply) => {
     const { email, password } = request.body;
+    console.log('Login attempt for email:', email);
 
     try {
         // Validate input
         if (!email || !password) {
+            console.log('Missing email or password');
             return reply.view('login.ejs', { 
                 title: 'Login',
                 error: 'Please provide both email and password',
@@ -150,8 +238,10 @@ fastify.post('/login', async (request, reply) => {
         // Check both collections for the user
         const user = await db.collection('users').findOne({ email }) || 
                     await db.collection('pending_users').findOne({ email });
-
+        console.log('Found user:', user ? 'yes' : 'no');
+        
         if (!user) {
+            console.log('User not found');
             return reply.view('login.ejs', { 
                 title: 'Login',
                 error: 'Invalid email or password',
@@ -161,8 +251,10 @@ fastify.post('/login', async (request, reply) => {
 
         // Verify password
         const validPassword = await bcrypt.compare(password, user.password);
+        console.log('Password valid:', validPassword);
 
         if (!validPassword) {
+            console.log('Invalid password');
             return reply.view('login.ejs', { 
                 title: 'Login',
                 error: 'Invalid email or password',
@@ -175,6 +267,11 @@ fastify.post('/login', async (request, reply) => {
             email: user.email,
             verified: user.verified
         };
+        console.log('Session set:', request.session);
+
+        // Save session explicitly
+        await request.session.save();
+        console.log('Session saved');
 
         // Redirect to dashboard
         return reply.redirect('/dashboard');
@@ -198,7 +295,7 @@ fastify.get('/logout', async (request, reply) => {
 });
 
 fastify.get('/signup', async (request, reply) => {
-    if (request.session.user) {
+    if (request.session && request.session.user) {
         return reply.redirect('/dashboard');
     }
     return reply.view('signup.ejs', { 
@@ -426,6 +523,30 @@ fastify.post('/verify-phone', { preHandler: fastify.authenticate }, async (reque
     }
 });
 
+// Call History Route
+fastify.get('/call-history', { preHandler: fastify.authenticate }, async (request, reply) => {
+    try {
+        const calls = await db.collection('calls').find({ 
+            userEmail: request.session.user.email 
+        }).sort({ startTime: -1 }).toArray();
+
+        return reply.view('call-history.ejs', {
+            title: 'Call History',
+            calls,
+            error: null,
+            user: request.user
+        });
+    } catch (error) {
+        request.log.error('Call history error:', error);
+        return reply.view('call-history.ejs', {
+            title: 'Call History',
+            calls: [],
+            error: 'Failed to load call history',
+            user: request.user
+        });
+    }
+});
+
 // Root Route
 fastify.get('/', async (request, reply) => {
     try {
@@ -446,25 +567,34 @@ fastify.all('/incoming-call', async (request, reply) => {
     try {
         // Check if the phone number is registered and verified
         const user = await db.collection('users').findOne({ phone: from });
-        
-        if (!user || !user.verified) {
+        if (!user) {
             const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
                             <Response>
-                                <Say>Sorry, this number is not registered or verified. Please register and verify your phone number first.</Say>
+                                <Say>Sorry, this phone number is not authorized. Please register first.</Say>
                                 <Hangup /></Response>`;
             return reply.type('text/xml').send(twimlResponse);
         }
 
+        // Create a new call record
+        const callRecord = {
+            userEmail: user.email,
+            phone: from,
+            startTime: new Date(),
+            status: 'in-progress'
+        };
+        const result = await db.collection('calls').insertOne(callRecord);
+
+        // Set up TwiML response with Stream for disconnect detection
         const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
                             <Response>
-                                <Say>Welcome back, ${user.name}! Please wait while we connect you to your personal A.I. companion.</Say>
+                                <Say>Welcome back, ${user.name}! You can start chatting with your AI companion now.</Say>
                                 <Pause length="1"/>
-                                <Say>O.K. you can start talking!</Say>
                                 <Connect>
-                                    <Stream url="wss://${request.headers.host}/media-stream" />
+                                    <Stream url="wss://${request.headers.host}/call-stream" />
                                 </Connect>
                             </Response>`;
         reply.type('text/xml').send(twimlResponse);
+
     } catch (error) {
         console.error('Error in incoming-call:', error);
         const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
@@ -475,18 +605,18 @@ fastify.all('/incoming-call', async (request, reply) => {
     }
 });
 
-// WebSocket route for media-stream
-fastify.register(async (fastify) => {
-    fastify.get('/media-stream', { websocket: true }, (connection, req) => {
-        console.log('Client connected');
-
-        // Connection-specific state
+// WebSocket route for call stream
+fastify.register(async function (fastify) {
+    fastify.get('/call-stream', { websocket: true }, function wsHandler(connection) {
+        console.log('Call stream connected');
         let streamSid = null;
+        let callRecord = null;
         let latestMediaTimestamp = 0;
         let lastAssistantItem = null;
         let markQueue = [];
         let responseStartTimestampTwilio = null;
 
+        // Connect to OpenAI Realtime API
         const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -494,7 +624,7 @@ fastify.register(async (fastify) => {
             }
         });
 
-        // Control initial session with OpenAI
+        // Initialize OpenAI session
         const initializeSession = () => {
             const sessionUpdate = {
                 type: 'session.update',
@@ -508,12 +638,14 @@ fastify.register(async (fastify) => {
                     temperature: 0.8,
                 }
             };
-
             console.log('Sending session update:', JSON.stringify(sessionUpdate));
             openAiWs.send(JSON.stringify(sessionUpdate));
+
+            // Have AI speak first
+            sendInitialConversationItem();
         };
 
-        // Send initial conversation item if AI talks first
+        // Send initial conversation item for AI to speak first
         const sendInitialConversationItem = () => {
             const initialConversationItem = {
                 type: 'conversation.item.create',
@@ -523,22 +655,134 @@ fastify.register(async (fastify) => {
                     content: [
                         {
                             type: 'input_text',
-                            text: 'Greet the user with "Hello there! I am an AI voice assistant powered by Twilio and the OpenAI Realtime API. You can ask me for facts, jokes, or anything you can imagine. How can I help you?"'
+                            text: 'Greet the user with "Hello there! Whats up, whats on your mind?"'
                         }
                     ]
                 }
             };
 
-            if (SHOW_TIMING_MATH) console.log('Sending initial conversation item:', JSON.stringify(initialConversationItem));
+            console.log('Sending initial conversation item');
             openAiWs.send(JSON.stringify(initialConversationItem));
             openAiWs.send(JSON.stringify({ type: 'response.create' }));
         };
+
+        // Handle OpenAI connection
+        openAiWs.on('open', () => {
+            console.log('Connected to OpenAI Realtime API');
+            setTimeout(initializeSession, 100);
+        });
+
+        // Handle OpenAI messages
+        openAiWs.on('message', (data) => {
+            try {
+                const response = JSON.parse(data);
+                console.log('OpenAI response:', response.type);
+
+                if (response.type === 'response.audio.delta' && response.delta) {
+                    const audioDelta = {
+                        event: 'media',
+                        streamSid: streamSid,
+                        media: { payload: Buffer.from(response.delta, 'base64').toString('base64') }
+                    };
+                    connection.send(JSON.stringify(audioDelta));
+
+                    // First delta from a new response starts the elapsed time counter
+                    if (!responseStartTimestampTwilio) {
+                        responseStartTimestampTwilio = latestMediaTimestamp;
+                        console.log(`Setting start timestamp for new response: ${responseStartTimestampTwilio}ms`);
+                    }
+
+                    if (response.item_id) {
+                        lastAssistantItem = response.item_id;
+                    }
+                    
+                    sendMark(connection, streamSid);
+                } else if (response.type === 'input_audio_buffer.speech_started') {
+                    handleSpeechStartedEvent();
+                }
+            } catch (error) {
+                console.error('Error processing OpenAI message:', error);
+            }
+        });
+
+        // Handle Twilio messages
+        connection.on('message', async function messageHandler(rawMessage) {
+            try {
+                const message = JSON.parse(rawMessage.toString());
+                
+                if (message.event === 'start') {
+                    streamSid = message.start.streamSid;
+                    console.log('Call stream started:', streamSid);
+                    
+                    // Reset timestamps on new stream
+                    responseStartTimestampTwilio = null;
+                    latestMediaTimestamp = 0;
+
+                    // Find the most recent in-progress call
+                    callRecord = await db.collection('calls').findOne(
+                        { status: 'in-progress' },
+                        { sort: { startTime: -1 } }
+                    );
+                    console.log('Found call record:', callRecord?._id);
+                } else if (message.event === 'media') {
+                    latestMediaTimestamp = message.media.timestamp;
+                    if (openAiWs.readyState === WebSocket.OPEN) {
+                        const audioAppend = {
+                            type: 'input_audio_buffer.append',
+                            audio: message.media.payload
+                        };
+                        openAiWs.send(JSON.stringify(audioAppend));
+                    }
+                } else if (message.event === 'mark') {
+                    if (markQueue.length > 0) {
+                        markQueue.shift();
+                    }
+                } else if (message.event === 'stop') {
+                    console.log('Call stream stopped:', streamSid);
+                    
+                    if (callRecord) {
+                        try {
+                            await db.collection('calls').updateOne(
+                                { _id: callRecord._id },
+                                { 
+                                    $set: { 
+                                        status: 'completed',
+                                        endTime: new Date()
+                                    }
+                                }
+                            );
+                            console.log('Updated call record status to completed:', callRecord._id);
+                        } catch (error) {
+                            console.error('Error updating call record:', error);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error processing message:', error);
+            }
+        });
+
+        // Handle disconnection
+        connection.on('close', async function closeHandler() {
+            console.log('Call stream disconnected');
+            if (openAiWs.readyState === WebSocket.OPEN) {
+                openAiWs.close();
+            }
+        });
+
+        openAiWs.on('close', () => {
+            console.log('Disconnected from OpenAI Realtime API');
+        });
+
+        openAiWs.on('error', (error) => {
+            console.error('Error in OpenAI WebSocket:', error);
+        });
 
         // Handle interruption when the caller's speech starts
         const handleSpeechStartedEvent = () => {
             if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
                 const elapsedTime = latestMediaTimestamp - responseStartTimestampTwilio;
-                if (SHOW_TIMING_MATH) console.log(`Calculating elapsed time for truncation: ${latestMediaTimestamp} - ${responseStartTimestampTwilio} = ${elapsedTime}ms`);
+                console.log(`Calculating elapsed time for truncation: ${latestMediaTimestamp} - ${responseStartTimestampTwilio} = ${elapsedTime}ms`);
 
                 if (lastAssistantItem) {
                     const truncateEvent = {
@@ -547,7 +791,7 @@ fastify.register(async (fastify) => {
                         content_index: 0,
                         audio_end_ms: elapsedTime
                     };
-                    if (SHOW_TIMING_MATH) console.log('Sending truncation event:', JSON.stringify(truncateEvent));
+                    console.log('Sending truncation event:', JSON.stringify(truncateEvent));
                     openAiWs.send(JSON.stringify(truncateEvent));
                 }
 
@@ -563,7 +807,7 @@ fastify.register(async (fastify) => {
             }
         };
 
-        // Send mark messages to Media Streams so we know if and when AI response playback is finished
+        // Send mark messages to track AI response playback
         const sendMark = (connection, streamSid) => {
             if (streamSid) {
                 const markEvent = {
@@ -575,105 +819,40 @@ fastify.register(async (fastify) => {
                 markQueue.push('responsePart');
             }
         };
-
-        // Open event for OpenAI WebSocket
-        openAiWs.on('open', () => {
-            console.log('Connected to the OpenAI Realtime API');
-            setTimeout(initializeSession, 100);
-        });
-
-        // Listen for messages from the OpenAI WebSocket (and send to Twilio if necessary)
-        openAiWs.on('message', (data) => {
-            try {
-                const response = JSON.parse(data);
-
-                if (LOG_EVENT_TYPES.includes(response.type)) {
-                    console.log(`Received event: ${response.type}`, response);
-                }
-
-                if (response.type === 'response.audio.delta' && response.delta) {
-                    const audioDelta = {
-                        event: 'media',
-                        streamSid: streamSid,
-                        media: { payload: Buffer.from(response.delta, 'base64').toString('base64') }
-                    };
-                    connection.send(JSON.stringify(audioDelta));
-
-                    // First delta from a new response starts the elapsed time counter
-                    if (!responseStartTimestampTwilio) {
-                        responseStartTimestampTwilio = latestMediaTimestamp;
-                        if (SHOW_TIMING_MATH) console.log(`Setting start timestamp for new response: ${responseStartTimestampTwilio}ms`);
-                    }
-
-                    if (response.item_id) {
-                        lastAssistantItem = response.item_id;
-                    }
-                    
-                    sendMark(connection, streamSid);
-                }
-
-                if (response.type === 'input_audio_buffer.speech_started') {
-                    handleSpeechStartedEvent();
-                }
-            } catch (error) {
-                console.error('Error processing OpenAI message:', error, 'Raw message:', data);
-            }
-        });
-
-        // Handle incoming messages from Twilio
-        connection.on('message', (message) => {
-            try {
-                const data = JSON.parse(message);
-
-                switch (data.event) {
-                    case 'media':
-                        latestMediaTimestamp = data.media.timestamp;
-                        if (SHOW_TIMING_MATH) console.log(`Received media message with timestamp: ${latestMediaTimestamp}ms`);
-                        if (openAiWs.readyState === WebSocket.OPEN) {
-                            const audioAppend = {
-                                type: 'input_audio_buffer.append',
-                                audio: data.media.payload
-                            };
-                            openAiWs.send(JSON.stringify(audioAppend));
-                        }
-                        break;
-                    case 'start':
-                        streamSid = data.start.streamSid;
-                        console.log('Incoming stream has started', streamSid);
-
-                        // Reset start and media timestamp on a new stream
-                        responseStartTimestampTwilio = null; 
-                        latestMediaTimestamp = 0;
-                        break;
-                    case 'mark':
-                        if (markQueue.length > 0) {
-                            markQueue.shift();
-                        }
-                        break;
-                    default:
-                        console.log('Received non-media event:', data.event);
-                        break;
-                }
-            } catch (error) {
-                console.error('Error parsing message:', error, 'Raw message:', message);
-            }
-        });
-
-        // Handle connection close
-        connection.on('close', () => {
-            if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
-            console.log('Client disconnected.');
-        });
-
-        // Handle WebSocket close and errors
-        openAiWs.on('close', () => {
-            console.log('Disconnected from the OpenAI Realtime API');
-        });
-
-        openAiWs.on('error', (error) => {
-            console.error('Error in the OpenAI WebSocket:', error);
-        });
     });
+});
+
+// Webhook for call status updates
+fastify.all('/call-status', async (request, reply) => {
+    const callSid = request.body?.CallSid || request.query?.CallSid;
+    const callStatus = request.body?.CallStatus || request.query?.CallStatus;
+    const from = request.body?.From || request.query?.From;
+
+    console.log('Call status update received:', { callSid, callStatus, from });
+
+    try {
+        if (callStatus === 'completed' || callStatus === 'failed') {
+            // Find and update the most recent in-progress call for this number
+            const result = await db.collection('calls').updateOne(
+                { 
+                    phone: from,
+                    status: 'in-progress'
+                },
+                { 
+                    $set: { 
+                        status: callStatus,
+                        endTime: new Date(),
+                        callSid: callSid
+                    }
+                }
+            );
+            console.log(`Updated call status to ${callStatus} for ${from}`);
+        }
+        reply.send({ success: true });
+    } catch (error) {
+        console.error('Error in call-status webhook:', error);
+        reply.code(500).send({ error: 'Failed to update call status' });
+    }
 });
 
 // Start the server
