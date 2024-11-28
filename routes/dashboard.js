@@ -52,10 +52,25 @@ export default async function dashboardRoutes(fastify) {
     }, async (request, reply) => {
         const db = getDB();
         try {
+            console.log('Fetching call history for user:', request.session.user.email);
+            
             const calls = await db.collection('calls')
                 .find({ userEmail: request.session.user.email })
                 .sort({ startTime: -1 })
                 .toArray();
+            
+            console.log('Found calls:', calls.length);
+            
+            // Debug log for each call
+            calls.forEach((call, index) => {
+                console.log(`Call ${index + 1}:`, {
+                    id: call._id,
+                    startTime: call.startTime,
+                    endTime: call.endTime,
+                    status: call.status,
+                    userEmail: call.userEmail
+                });
+            });
 
             return reply.view('call-history.ejs', {
                 title: 'Call History',

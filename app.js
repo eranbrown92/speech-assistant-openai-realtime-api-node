@@ -16,7 +16,6 @@ import { fileURLToPath } from 'url';
 import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
 import paymentRoutes from './routes/payment.js';
-import callRoutes from './routes/call.js';
 
 // Import database connection
 import { connectDB } from './config/db.js';
@@ -55,7 +54,7 @@ await fastify.register(fastifyView, {
 await fastify.register(authRoutes);
 await fastify.register(dashboardRoutes);
 await fastify.register(paymentRoutes);
-await fastify.register(callRoutes);
+await fastify.register(import('./routes/call.js'));
 
 // Add root route
 fastify.get('/', async (request, reply) => {
@@ -66,7 +65,12 @@ fastify.get('/', async (request, reply) => {
 const start = async () => {
     try {
         await connectDB();
-        await fastify.listen({ port: 5050, host: '0.0.0.0' });
+        await fastify.listen({ 
+            port: 5050, 
+            host: '0.0.0.0',
+            backlog: 511,
+            maxRequestsPerSocket: 0 // Disable limit for WebSocket connections
+        });
         console.log('Server is running on port 5050');
     } catch (err) {
         fastify.log.error(err);
