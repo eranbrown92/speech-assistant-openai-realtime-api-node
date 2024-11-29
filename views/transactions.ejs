@@ -1,67 +1,59 @@
 <div class="container mt-5">
     <div class="row">
         <div class="col-lg-8 mx-auto">
-            <div class="card shadow-sm mb-4">
+            <div class="card shadow-sm">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <div class="d-flex align-items-center gap-2">
-                            <h2 class="card-title mb-0">Call History</h2>
-                            <button id="refreshCallHistory" class="btn refresh-btn" title="Refresh call history">
+                            <h2 class="card-title mb-0">Transaction History</h2>
+                            <button id="refreshTransactions" class="btn refresh-btn" title="Refresh transactions">
                                 <i class="bi bi-arrow-clockwise refresh-icon"></i>
                             </button>
                         </div>
                     </div>
 
-                    <div class="alert alert-info mb-4">
-                        <i class="bi bi-info-circle me-2"></i>
-                        <strong>Billing Information:</strong> For billing purposes, calls shorter than one minute are rounded up to one minute.
-                    </div>
-
-                    <% if (calls && calls.length > 0) { %>
+                    <% if (transactions && transactions.length > 0) { %>
                         <div class="table-responsive">
                             <table class="table">
                                 <thead>
                                     <tr>
                                         <th>Date</th>
-                                        <th>Duration</th>
+                                        <th>Description</th>
+                                        <th>Amount</th>
                                         <th>Status</th>
+                                        <th>Minutes</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <% calls.forEach(function(call) { %>
+                                    <% transactions.forEach(function(transaction) { %>
                                         <tr>
-                                            <td><%= new Date(call.startTime).toLocaleString() %></td>
+                                            <td><%= new Date(transaction.date).toLocaleString() %></td>
                                             <td>
-                                                <% if (call.endTime) { %>
-                                                    <% const duration = (new Date(call.endTime) - new Date(call.startTime)) / 1000 / 60; %>
-                                                    <%= Math.max(1, Number(duration.toFixed(1))) %> minutes
-                                                <% } else { %>
-                                                    -
+                                                <%= transaction.minutes %> Minutes Package
+                                                <% if (transaction.receipt_url) { %>
+                                                    <a href="<%= transaction.receipt_url %>" target="_blank" class="ms-2 text-muted">
+                                                        <i class="bi bi-receipt" title="View receipt"></i>
+                                                    </a>
                                                 <% } %>
                                             </td>
+                                            <td>$<%= transaction.amount.toFixed(2) %></td>
                                             <td>
-                                                <% if (call.status === 'completed') { %>
-                                                    <span class="badge bg-success">Completed</span>
-                                                <% } else if (call.status === 'active') { %>
-                                                    <span class="badge bg-primary">Active</span>
-                                                <% } else { %>
-                                                    <span class="badge bg-secondary">Unknown</span>
-                                                <% } %>
+                                                <span class="badge bg-<%= transaction.status === 'completed' ? 'success' : 'secondary' %>">
+                                                    <%= transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1) %>
+                                                </span>
                                             </td>
+                                            <td><%= transaction.minutes %> minutes</td>
                                         </tr>
                                     <% }); %>
                                 </tbody>
                             </table>
                         </div>
                     <% } else { %>
-                        <p class="text-center text-muted">No calls found.</p>
+                        <div class="text-center py-4">
+                            <i class="bi bi-receipt text-muted mb-3" style="font-size: 2rem;"></i>
+                            <p class="text-muted mb-0">No transactions found</p>
+                        </div>
                     <% } %>
-
-                    <div class="d-grid gap-2 mt-4">
-                        <a href="/dashboard" class="btn btn-outline-primary">
-                            <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
-                        </a>
-                    </div>
                 </div>
             </div>
         </div>
@@ -109,7 +101,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const refreshBtn = document.getElementById('refreshCallHistory');
+    const refreshBtn = document.getElementById('refreshTransactions');
     const refreshIcon = refreshBtn.querySelector('.refresh-icon');
 
     refreshBtn.addEventListener('click', async function() {
@@ -129,13 +121,13 @@ document.addEventListener('DOMContentLoaded', function() {
             if (currentTable && newTable) {
                 currentTable.innerHTML = newTable.innerHTML;
             } else {
-                // Handle case where there might be no calls
+                // Handle case where there might be no transactions
                 const cardBody = document.querySelector('.card-body');
                 const newContent = doc.querySelector('.card-body').innerHTML;
                 cardBody.innerHTML = newContent;
             }
         } catch (error) {
-            console.error('Error refreshing call history:', error);
+            console.error('Error refreshing transactions:', error);
         } finally {
             setTimeout(() => {
                 refreshIcon.classList.remove('rotating');
